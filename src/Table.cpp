@@ -62,10 +62,6 @@ bool Table::insert(const Row& row)
                 return false;
             }
             bool ok = this->disk->writePage(pageID, page);
-            if (ok && this->owner != nullptr)
-            {
-                this->owner->save();
-            }
             return ok;
         }
     }
