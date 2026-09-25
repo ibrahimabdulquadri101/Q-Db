@@ -1,8 +1,11 @@
 #include "Table.h"
+#include "Catalog.h"
 #include "DiskManager.h"
 #include "Page.h"
 #include <utility>
 #include <iostream>
+
+Table::Table() : name(), PageIDs(), disk(nullptr), owner(nullptr) {}
 
 void Table::init(std::string name, DiskManager* disk)
 {
@@ -14,6 +17,26 @@ void Table::init(std::string name, DiskManager* disk)
     {
         this->PageIDs.push_back(this->disk->allocatePage());
     }
+}
+
+void Table::restorePageIDs(const std::vector<PageID>& pageIDs)
+{
+    this->PageIDs = pageIDs;
+}
+
+void Table::setName(std::string name)
+{
+    this->name = std::move(name);
+}
+
+void Table::setDisk(DiskManager* disk)
+{
+    this->disk = disk;
+}
+
+void Table::setOwner(Catalog* catalog)
+{
+    this->owner = catalog;
 }
 
 bool Table::insert(const Row& row)
@@ -38,7 +61,12 @@ bool Table::insert(const Row& row)
             {
                 return false;
             }
-            return this->disk->writePage(pageID, page);
+            bool ok = this->disk->writePage(pageID, page);
+            if (ok && this->owner != nullptr)
+            {
+                this->owner->save();
+            }
+            return ok;
         }
     }
 
@@ -53,7 +81,12 @@ bool Table::insert(const Row& row)
         return false;
     }
 
-    return this->disk->writePage(newPageID, page);
+    bool ok = this->disk->writePage(newPageID, page);
+    if (ok && this->owner != nullptr)
+    {
+        this->owner->save();
+    }
+    return ok;
 }
 
 void Table::scan(std::function<void(const Row&)> callback)
@@ -88,7 +121,8 @@ std::string Table::getName()
     return this->name;
 }
 
-std::vector<PageID> Table::getPageIDs()
+std::vector<PageID> Table::getPageIDs() const
 {
     return this->PageIDs;
 }
+
