@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
+class WAL;
+
 class DiskManager
 {
     private:
@@ -13,6 +15,7 @@ class DiskManager
         std::string filepath;
         PageID totalPages;
         PageID freeListHead;
+        WAL* wal = nullptr;
     public:
         bool open(std::string path);
         bool readPage(PageID id , Page& page);
@@ -22,6 +25,10 @@ class DiskManager
         bool saveCatalog(const std::unordered_map<std::string, std::vector<PageID>>& tables);
         bool loadCatalog(std::unordered_map<std::string, std::vector<PageID>>& tables);
         void close();
+        bool sync();
+        const std::string& getFilePath() const;
+        void setWAL(WAL* wal);
+        WAL* getWAL() const;
 };
 
 #endif // DISKMANAGER_H

@@ -1,10 +1,14 @@
 #include <iostream>
 #include <fstream>
+#include <cstdio>
+#include <fcntl.h>
+#include <unistd.h>
 #include "Page.h"
 #include "DiskManager.h"
 
 bool DiskManager::open(std::string path)
 {
+    filepath = path;
     file.open(path, std::ios::in | std::ios::out | std::ios::binary);
 
     if (!file.is_open())
@@ -105,82 +109,92 @@ PageID DiskManager::allocatePage()
 
 bool DiskManager::saveCatalog(const std::unordered_map<std::string, std::vector<PageID>>& tables)
 {
-    if (!file.is_open())
+    if (!file.is_open() || filepath.empty())
     {
         return false;
     }
 
-    file.seekp(8, std::ios::beg);
-    uint32_t tableCount = static_cast<uint32_t>(tables.size());
-    file.write(reinterpret_cast<const char*>(&tableCount), sizeof(tableCount));
+    const std::string path = filepath + ".catalog";
+    const std::string temporaryPath = path + ".tmp";
+    std::ofstream catalogFile(temporaryPath, std::ios::binary | std::ios::trunc);
+    if (!catalogFile)
+    {
+        return false;
+    }
+    const uint32_t tableCount = static_cast<uint32_t>(tables.size());
+    catalogFile.write(reinterpret_cast<const char*>(&tableCount), sizeof(tableCount));
 
     for (const auto& [name, pageIDs] : tables)
     {
         uint32_t nameLength = static_cast<uint32_t>(name.size());
         uint32_t pageCount = static_cast<uint32_t>(pageIDs.size());
-        file.write(reinterpret_cast<const char*>(&nameLength), sizeof(nameLength));
-        file.write(name.data(), nameLength);
-        file.write(reinterpret_cast<const char*>(&pageCount), sizeof(pageCount));
+        catalogFile.write(reinterpret_cast<const char*>(&nameLength), sizeof(nameLength));
+        catalogFile.write(name.data(), nameLength);
+        catalogFile.write(reinterpret_cast<const char*>(&pageCount), sizeof(pageCount));
         for (PageID pageID : pageIDs)
         {
-            file.write(reinterpret_cast<const char*>(&pageID), sizeof(pageID));
+            catalogFile.write(reinterpret_cast<const char*>(&pageID), sizeof(pageID));
         }
     }
 
-    file.flush();
-    return true;
+    catalogFile.close();
+    if (!catalogFile)
+    {
+        return false;
+    }
+    std::remove(path.c_str());
+    return std::rename(temporaryPath.c_str(), path.c_str()) == 0;
 }
 
 bool DiskManager::loadCatalog(std::unordered_map<std::string, std::vector<PageID>>& tables)
 {
     tables.clear();
-    if (!file.is_open())
+    if (!file.is_open() || filepath.empty())
     {
         return false;
     }
 
-    file.seekg(8, std::ios::beg);
-    uint32_t tableCount = 0;
-    file.read(reinterpret_cast<char*>(&tableCount), sizeof(tableCount));
-    if (file.fail())
+    std::ifstream catalogFile(filepath + ".catalog", std::ios::binary);
+    if (!catalogFile)
     {
-        file.clear();
         return true;
+    }
+    uint32_t tableCount = 0;
+    catalogFile.read(reinterpret_cast<char*>(&tableCount), sizeof(tableCount));
+    if (!catalogFile || tableCount > 1000000)
+    {
+        return false;
     }
 
     for (uint32_t i = 0; i < tableCount; ++i)
     {
         uint32_t nameLength = 0;
-        file.read(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
-        if (file.fail())
+        catalogFile.read(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
+        if (!catalogFile || nameLength == 0 || nameLength > 1024 * 1024)
         {
-            file.clear();
             return false;
         }
 
         std::string name(nameLength, '\0');
-        file.read(&name[0], nameLength);
-        if (file.fail())
+        catalogFile.read(&name[0], nameLength);
+        if (!catalogFile)
         {
-            file.clear();
             return false;
         }
 
         uint32_t pageCount = 0;
-        file.read(reinterpret_cast<char*>(&pageCount), sizeof(pageCount));
-        if (file.fail())
+        catalogFile.read(reinterpret_cast<char*>(&pageCount), sizeof(pageCount));
+        if (!catalogFile || pageCount > 100000000)
         {
-            file.clear();
             return false;
         }
 
         std::vector<PageID> pageIDs(pageCount);
         for (uint32_t j = 0; j < pageCount; ++j)
         {
-            file.read(reinterpret_cast<char*>(&pageIDs[j]), sizeof(PageID));
-            if (file.fail())
+            catalogFile.read(reinterpret_cast<char*>(&pageIDs[j]), sizeof(PageID));
+            if (!catalogFile)
             {
-                file.clear();
                 return false;
             }
         }
@@ -213,4 +227,41 @@ void DiskManager::close()
         file.flush();
         file.close();
     }
+}
+
+bool DiskManager::sync()
+{
+    if (!file.is_open() || filepath.empty())
+    {
+        return false;
+    }
+    file.flush();
+    if (!file)
+    {
+        file.clear();
+        return false;
+    }
+    const int descriptor = ::open(filepath.c_str(), O_RDWR);
+    if (descriptor < 0)
+    {
+        return false;
+    }
+    const int syncResult = ::fsync(descriptor);
+    ::close(descriptor);
+    return syncResult == 0;
+}
+
+const std::string& DiskManager::getFilePath() const
+{
+    return filepath;
+}
+
+void DiskManager::setWAL(WAL* walManager)
+{
+    wal = walManager;
+}
+
+WAL* DiskManager::getWAL() const
+{
+    return wal;
 }

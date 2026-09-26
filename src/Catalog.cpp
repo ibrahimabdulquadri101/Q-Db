@@ -87,3 +87,19 @@ void Catalog::save()
 
     this->disk->saveCatalog(snapshot);
 }
+
+bool Catalog::dropTable(std::string name)
+{
+    if (this->disk == nullptr)
+    {
+        return false;
+    }
+    auto it = this->tables.find(name);
+    if (it == this->tables.end())
+    {
+        return false;
+    }
+    this->tables.erase(it);
+    this->save();
+    return true;
+}

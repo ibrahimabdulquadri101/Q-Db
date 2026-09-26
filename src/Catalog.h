@@ -15,6 +15,7 @@ class Catalog
         Table* createTable(std::string name);
         Table* getTable(std::string name);
         bool tableExists(std::string name);
+        bool dropTable(std::string name);
 };
 
 #endif // CATALOG_H

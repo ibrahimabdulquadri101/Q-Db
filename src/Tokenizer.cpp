@@ -7,7 +7,9 @@
 std::vector<Token> tokenize(std::string input)
 {
     static const std::unordered_set<std::string> keywords = {
-        "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES"};
+        "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES",
+        "CREATE", "TABLE", "INT", "CHAR", "DELETE", "UPDATE", "SET",
+        "DROP", "IF", "EXISTS"};
 
     std::vector<Token> tokens;
     std::size_t position = 0;
@@ -82,6 +84,15 @@ std::vector<Token> tokenize(std::string input)
                 throw std::invalid_argument("Unterminated string literal");
             }
             tokens.push_back({TokenType::STRING, value});
+            continue;
+        }
+
+        // Multi-char operators: <=, >=, !=
+        if ((input[position] == '<' || input[position] == '>' || input[position] == '!') &&
+            position + 1 < input.size() && input[position + 1] == '=')
+        {
+            tokens.push_back({TokenType::OPERATOR, std::string(1, input[position]) + "="});
+            position += 2;
             continue;
         }
 
